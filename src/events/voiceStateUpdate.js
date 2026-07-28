@@ -10,6 +10,11 @@ import { sanitizeInput } from '../utils/validation.js';
 import { logger } from '../utils/logger.js';
 import { handleMusicVoiceState } from '../services/music/musicVoiceState.js';
 
+// --- NEW IMPORTS FOR VOICE XP ---
+import { getLevelingConfig } from '../services/leveling.js';
+import { addXp } from '../services/xpSystem.js';
+// --------------------------------
+
 const channelCreationCooldown = new Map();
 const VOICE_CREATE_COOLDOWN_MS = 2000;
 const DEFAULT_VOICE_BITRATE = 64000;
@@ -19,6 +24,14 @@ const MAX_CHANNEL_NAME_LENGTH = 100;
 const FALLBACK_CHANNEL_NAME = 'Voice Room';
 const MAX_TRACKED_COOLDOWNS = 10000;
 
+// --- NEW CONSTANTS & MAPS FOR VOICE XP ---
+const activeVoiceSessions = new Map();
+const pendingVoiceXp = new Map();
+const PASSIVE_VOICE_XP_PER_MIN = 10;
+const ACTIVE_SPEAKING_XP_PER_MIN = 15;
+const FLUSH_INTERVAL_MS = 10 * 60 * 1000;
+// -----------------------------------------
+
 export default {
     name: 'voiceStateUpdate',
     async execute(oldState, newState, client) {
@@ -26,6 +39,48 @@ export default {
 
         const guildId = newState.guild.id;
         const userId = newState.member.id;
+
+        // ==========================================
+        // 1. VOICE XP TRACKING LOGIC
+        // ==========================================
+        try {
+            const isMuted = newState.selfMute || newState.serverMute || newState.selfDeaf || newState.serverDeaf;
+
+            // User joined a voice channel
+            if (!oldState.channelId && newState.channelId) {
+                activeVoiceSessions.set(userId, {
+                    lastStateChange: Date.now(),
+                    isMuted,
+                    accumulatedPassiveMs: 0,
+                    accumulatedActiveMs: 0,
+                    guildId,
+                });
+            }
+            // User left a voice channel
+            else if (oldState.channelId && !newState.channelId) {
+                const session = activeVoiceSessions.get(userId);
+                if (session) {
+                    updateSessionTime(session, isMuted);
+                    flushSessionToPending(userId, session);
+                    activeVoiceSessions.delete(userId);
+                }
+            }
+            // User changed mute/deafen status or switched channels
+            else if (oldState.channelId && newState.channelId) {
+                const session = activeVoiceSessions.get(userId);
+                if (session) {
+                    updateSessionTime(session, session.isMuted);
+                    session.isMuted = isMuted;
+                    session.lastStateChange = Date.now();
+                }
+            }
+        } catch (error) {
+            logger.error(`Error in Voice XP tracking for guild ${guildId}:`, error);
+        }
+
+        // ==========================================
+        // 2. EXISTING JOIN-TO-CREATE LOGIC
+        // ==========================================
         const cooldownKey = `${guildId}-${userId}`;
         cleanupCooldownEntries();
 
@@ -49,7 +104,7 @@ export default {
             }
 
         } catch (error) {
-            logger.error(`Error in voiceStateUpdate for guild ${guildId}:`, error);
+            logger.error(`Error in Join-to-Create for guild ${guildId}:`, error);
         }
 
         async function handleVoiceJoin(client, state, config) {
@@ -62,7 +117,7 @@ export default {
             const now = Date.now();
             if (channelCreationCooldown.has(cooldownKey)) {
                 const lastCreation = channelCreationCooldown.get(cooldownKey);
-if (now - lastCreation < VOICE_CREATE_COOLDOWN_MS) {
+                if (now - lastCreation < VOICE_CREATE_COOLDOWN_MS) {
                     logger.warn(`User ${member.id} is on cooldown for channel creation`);
                     return;
                 }
@@ -198,9 +253,9 @@ if (now - lastCreation < VOICE_CREATE_COOLDOWN_MS) {
 
                 const tempChannel = await guild.channels.create({
                     name: channelName,
-type: ChannelType.GuildVoice,
+                    type: ChannelType.GuildVoice,
                     parent: triggerChannel.parentId,
-userLimit: userLimit === 0 ? undefined : userLimit,
+                    userLimit: userLimit === 0 ? undefined : userLimit,
                     bitrate: bitrate,
                     permissionOverwrites: [
                         {
@@ -242,11 +297,8 @@ userLimit: userLimit === 0 ? undefined : userLimit,
         async function deleteTemporaryChannel(client, channel, guildId) {
             try {
                 await unregisterTemporaryChannel(client, guildId, channel.id);
-
                 await channel.delete('Temporary voice channel - empty');
-
                 logger.info(`Deleted temporary voice channel ${channel.name} (${channel.id}) in guild ${channel.guild.name}`);
-
             } catch (error) {
                 logger.error(`Failed to delete temporary channel ${channel.id}:`, error);
             }
@@ -293,12 +345,89 @@ userLimit: userLimit === 0 ? undefined : userLimit,
     }
 };
 
+// ==========================================
+// 3. VOICE XP HELPER FUNCTIONS & SCHEDULER
+// ==========================================
+function updateSessionTime(session, wasMuted) {
+    const now = Date.now();
+    const duration = now - session.lastStateChange;
+    if (wasMuted) {
+        session.accumulatedPassiveMs += duration;
+    } else {
+        session.accumulatedActiveMs += duration;
+    }
+}
+
+function flushSessionToPending(userId, session) {
+    const passiveMinutes = session.accumulatedPassiveMs / 60000;
+    const activeMinutes = session.accumulatedActiveMs / 60000;
+
+    const earnedXp = Math.floor(
+        (passiveMinutes * PASSIVE_VOICE_XP_PER_MIN) +
+        (activeMinutes * ACTIVE_SPEAKING_XP_PER_MIN)
+    );
+
+    if (earnedXp > 0) {
+        const current = pendingVoiceXp.get(userId) || { pendingXp: 0, guildId: session.guildId };
+        pendingVoiceXp.set(userId, {
+            pendingXp: current.pendingXp + earnedXp,
+            guildId: session.guildId,
+        });
+    }
+
+    session.accumulatedPassiveMs = 0;
+    session.accumulatedActiveMs = 0;
+}
+
+export function startVoiceXpScheduler(client) {
+    setInterval(async () => {
+        try {
+            const now = Date.now();
+
+            for (const [userId, session] of activeVoiceSessions.entries()) {
+                updateSessionTime(session, session.isMuted);
+                session.lastStateChange = now;
+                flushSessionToPending(userId, session);
+            }
+
+            for (const [userId, data] of pendingVoiceXp.entries()) {
+                if (data.pendingXp <= 0) continue;
+
+                const levelingConfig = await getLevelingConfig(client, data.guildId);
+                if (!levelingConfig?.enabled) continue;
+
+                const guild = await client.guilds.fetch(data.guildId).catch(() => null);
+                if (!guild) continue;
+
+                const member = await guild.members.fetch(userId).catch(() => null);
+                if (!member) continue;
+
+                let finalXp = data.pendingXp;
+                if (levelingConfig.xpMultiplier && levelingConfig.xpMultiplier > 1) {
+                    finalXp = Math.floor(finalXp * levelingConfig.xpMultiplier);
+                }
+
+                const result = await addXp(client, guild, member, finalXp);
+                if (result.success && result.leveledUp) {
+                    logger.info(`${member.user.tag} leveled up to level ${result.level} via voice activity in ${guild.name}`);
+                }
+            }
+
+            pendingVoiceXp.clear();
+        } catch (error) {
+            logger.error('Error in voice XP scheduler loop:', error);
+        }
+    }, FLUSH_INTERVAL_MS);
+}
+
+// ==========================================
+// 4. EXISTING UTILITY FUNCTIONS
+// ==========================================
 function sanitizeVoiceChannelName(inputName) {
     const safeName = sanitizeInput(String(inputName || ''), MAX_CHANNEL_NAME_LENGTH)
         .replace(/[\r\n\t]/g, ' ')
         .replace(/\s+/g, ' ')
         .trim();
-
     return safeName || FALLBACK_CHANNEL_NAME;
 }
 
@@ -307,7 +436,6 @@ function clampVoiceBitrate(value) {
     if (!Number.isFinite(parsed)) {
         return DEFAULT_VOICE_BITRATE;
     }
-
     return Math.max(MIN_VOICE_BITRATE, Math.min(MAX_VOICE_BITRATE, Math.floor(parsed)));
 }
 
@@ -324,7 +452,6 @@ function trimCooldownMapIfNeeded() {
     if (channelCreationCooldown.size <= MAX_TRACKED_COOLDOWNS) {
         return;
     }
-
     const entries = [...channelCreationCooldown.entries()].sort((a, b) => a[1] - b[1]);
     const removeCount = channelCreationCooldown.size - MAX_TRACKED_COOLDOWNS;
     for (let index = 0; index < removeCount; index += 1) {

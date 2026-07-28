@@ -16,6 +16,7 @@ import { initializeMusic } from './services/music/riffySetup.js';
 import { shutdownMusic } from './services/music/playerHandler.js';
 import pkg from '../package.json' with { type: 'json' };
 import { EXPECTED_SCHEMA_VERSION, EXPECTED_SCHEMA_LABEL } from './config/schemaVersion.js';
+import { startVoiceXpScheduler } from './events/voiceStateUpdate.js';
 
 class TitanBot extends Client {
   constructor() {
@@ -107,6 +108,7 @@ class TitanBot extends Client {
       );
       
       this.setupCronJobs();
+      startVoiceXpScheduler(this);
     } catch (error) {
       logger.error('Failed to start bot:', error);
       process.exit(1);
