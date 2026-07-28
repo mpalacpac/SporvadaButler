@@ -29,7 +29,7 @@ const activeVoiceSessions = new Map();
 const pendingVoiceXp = new Map();
 const PASSIVE_VOICE_XP_PER_MIN = 10;
 const ACTIVE_SPEAKING_XP_PER_MIN = 15;
-const FLUSH_INTERVAL_MS = 10 * 60 * 1000;
+const FLUSH_INTERVAL_MS = 5 * 60 * 1000;
 // -----------------------------------------
 
 export default {
