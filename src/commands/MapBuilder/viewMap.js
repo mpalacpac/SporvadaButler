@@ -1,5 +1,5 @@
 import { SlashCommandBuilder, EmbedBuilder } from 'discord.js';
-import { pool } from '../../utils/database.js';
+import db from '../../utils/database.js';
 
 export default {
     data: new SlashCommandBuilder()
@@ -12,14 +12,14 @@ export default {
         const guildId = interaction.guild.id;
 
         try {
-            const configResult = await pool.query('SELECT * FROM map_configs WHERE guild_id = $1', [guildId]);
+            const configResult = await db.query('SELECT * FROM map_configs WHERE guild_id = $1', [guildId]);
             if (configResult.rows.length === 0) {
                 return interaction.editReply({ content: '❌ The regional map has not been initialized yet. Run `/map-setup` first.' });
             }
 
             const mapConfig = configResult.rows[0];
 
-            const sectorsResult = await pool.query(
+            const sectorsResult = await db.query(
                 'SELECT terrain_type, COUNT(*) as count FROM map_sectors WHERE guild_id = $1 GROUP BY terrain_type',
                 [guildId]
             );
@@ -31,7 +31,7 @@ export default {
                 if (row.terrain_type === 'ocean') oceanCount = parseInt(row.count);
             });
 
-            const nationsResult = await pool.query(`
+            const nationsResult = await db.query(`
                 SELECT n.nation_name, COUNT(s.sector_code) as claimed_sectors 
                 FROM map_nations n 
                 LEFT JOIN map_sectors s ON n.id = s.owner_nation_id 

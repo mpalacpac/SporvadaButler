@@ -1,5 +1,5 @@
 import { SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder } from 'discord.js';
-import { pool } from '../../utils/database.js';
+import db from '../../utils/database.js';
 
 export default {
     data: new SlashCommandBuilder()
@@ -36,7 +36,7 @@ export default {
                               width_pixels = EXCLUDED.width_pixels, 
                               height_pixels = EXCLUDED.height_pixels;
             `;
-            await pool.query(query, [guildId, mapName, width, height]);
+            await db.query(query, [guildId, mapName, width, height]);
 
             const embed = new EmbedBuilder()
                 .setColor('#0099ff')
