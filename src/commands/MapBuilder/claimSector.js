@@ -1,5 +1,5 @@
-const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
-const { pool } = require('../../utils/database');
+import { SlashCommandBuilder, EmbedBuilder } from 'discord.js';
+import { pool } from '../../utils/database.js';
 
 export default {
     data: new SlashCommandBuilder()
@@ -31,7 +31,6 @@ export default {
         const nationName = interaction.options.getString('nation_name');
 
         try {
-            // Check if map config exists for this guild
             const configCheck = await pool.query('SELECT * FROM map_configs WHERE guild_id = $1', [guildId]);
             if (configCheck.rows.length === 0) {
                 return interaction.editReply({ content: '❌ The regional map has not been initialized yet. Run `/map-setup` first.' });
@@ -44,26 +43,22 @@ export default {
                     return interaction.editReply({ content: '❌ You must specify your `nation_name` when claiming a land sector.' });
                 }
 
-                // Find or create the nation profile
                 let nationQuery = await pool.query(
                     'SELECT id FROM map_nations WHERE guild_id = $1 AND LOWER(nation_name) = LOWER($2)',
                     [guildId, nationName]
                 );
 
                 if (nationQuery.rows.length > 0) {
-                    nationId = nationQuery.rows.id;
+                    nationId = nationQuery.rows[0].id;
                 } else {
-                    // Automatically register the nation if it doesn't exist yet
                     const insertNation = await pool.query(
                         'INSERT INTO map_nations (guild_id, nation_name, owner_discord_id) VALUES ($1, $2, $3) RETURNING id',
                         [guildId, nationName, interaction.user.id]
                     );
-                    nationId = insertNation.rows.id;
+                    nationId = insertNation.rows[0].id;
                 }
             }
 
-            // Upsert the sector claim into database
-            // Note: coord_x and coord_y default to 0 for manual code inputs until visual mapping is bound
             const sectorUpsert = `
                 INSERT INTO map_sectors (guild_id, sector_code, coord_x, coord_y, terrain_type, owner_nation_id)
                 VALUES ($1, $2, 0, 0, $3, $4)

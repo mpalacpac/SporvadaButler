@@ -1,5 +1,5 @@
-const { SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder } = require('discord.js');
-const { pool } = require('../../utils/database'); // Adjust path based on your db wrapper structure
+import { SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder } from 'discord.js';
+import { pool } from '../../utils/database.js';
 
 export default {
     data: new SlashCommandBuilder()
@@ -28,7 +28,6 @@ export default {
         const height = interaction.options.getInteger('height');
 
         try {
-            // Upsert map configurations into PostgreSQL
             const query = `
                 INSERT INTO map_configs (guild_id, map_name, width_pixels, height_pixels, grid_resolution)
                 VALUES ($1, $2, $3, $4, 100)
