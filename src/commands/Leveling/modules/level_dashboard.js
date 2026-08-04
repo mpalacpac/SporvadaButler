@@ -29,6 +29,11 @@ function buildDashboardEmbed(cfg, guild) {
     const xpMin = cfg.xpRange?.min ?? cfg.xpPerMessage?.min ?? 15;
     const xpMax = cfg.xpRange?.max ?? cfg.xpPerMessage?.max ?? 25;
     const cooldown = cfg.xpCooldown ?? 60;
+    
+    // Voice XP configuration parameters
+    const voicePassive = cfg.voiceXpRate?.passive ?? 10;
+    const voiceActive = cfg.voiceXpRate?.active ?? 15;
+
     const rawMsg = cfg.levelUpMessage || '{user} has leveled up to level {level}!';
     const msgPreview = `\`${rawMsg.length > 60 ? rawMsg.substring(0, 60) + '…' : rawMsg}\``;
 
@@ -50,8 +55,10 @@ function buildDashboardEmbed(cfg, guild) {
         .addFields(
             { name: 'Level-up Channel', value: channel, inline: true },
             { name: 'System Status', value: cfg.enabled ? '**Enabled**' : '**Disabled**', inline: true },
+            { name: 'Voice XP Status', value: cfg.voiceXpEnabled !== false ? '**Enabled**' : '**Disabled**', inline: true },
             { name: 'Announcements', value: cfg.announceLevelUp !== false ? '**Enabled**' : '**Disabled**', inline: true },
             { name: 'XP per Message', value: `\`${xpMin} – ${xpMax}\``, inline: true },
+            { name: 'Voice XP / Minute', value: `Active: \`${voiceActive}\` | Muted: \`${voicePassive}\`\n_(Updates DB every 5m)_`, inline: true },
             { name: 'XP Cooldown', value: `\`${cooldown}s\``, inline: true },
             { name: '\u200B', value: '\u200B', inline: true },
             { name: 'Level-up Message', value: msgPreview, inline: false },
@@ -84,6 +91,11 @@ function buildSelectMenu(guildId) {
                 .setValue('xp_range')
                 .setEmoji('🎲'),
             new StringSelectMenuOptionBuilder()
+                .setLabel('Set Voice XP Rates')
+                .setDescription('Set active and muted voice channel XP per minute')
+                .setValue('voice_xp_rate')
+                .setEmoji('🎙️'),
+            new StringSelectMenuOptionBuilder()
                 .setLabel('Set XP Cooldown')
                 .setDescription('Seconds between XP grants for the same user')
                 .setValue('xp_cooldown')
@@ -97,23 +109,24 @@ function buildSelectMenu(guildId) {
                 .setLabel('Remove Role Reward')
                 .setDescription('Remove a role reward from a specific level')
                 .setValue('role_reward_remove')
-                .setEmoji('\ud83d\uddd1\ufe0f'),
+                .setEmoji('🗑️'),
             new StringSelectMenuOptionBuilder()
                 .setLabel('Ignored Channels')
                 .setDescription('Toggle channels where XP will not be awarded')
                 .setValue('ignore_channels')
-                .setEmoji('\ud83d\udeab'),
+                .setEmoji('🚫'),
             new StringSelectMenuOptionBuilder()
                 .setLabel('Ignored Roles')
                 .setDescription('Toggle roles that will not receive XP')
                 .setValue('ignore_roles')
-                .setEmoji('\ud83d\udeab'),
+                .setEmoji('🚫'),
         );
 }
 
 function buildButtonRow(cfg, guildId, disabled = false) {
     const announceOn = cfg.announceLevelUp !== false;
     const systemOn = cfg.enabled !== false;
+    const voiceXpOn = cfg.voiceXpEnabled !== false;
     return new ActionRowBuilder().addComponents(
         new ButtonBuilder()
             .setCustomId(`level_cfg_toggle_announce_${guildId}`)
@@ -126,6 +139,12 @@ function buildButtonRow(cfg, guildId, disabled = false) {
             .setLabel('Leveling')
             .setStyle(systemOn ? ButtonStyle.Success : ButtonStyle.Danger)
             .setEmoji('⚡')
+            .setDisabled(disabled),
+        new ButtonBuilder()
+            .setCustomId(`level_cfg_toggle_voicexp_${guildId}`)
+            .setLabel('Voice XP')
+            .setStyle(voiceXpOn ? ButtonStyle.Success : ButtonStyle.Danger)
+            .setEmoji('🎙️')
             .setDisabled(disabled),
     );
 }
@@ -166,7 +185,8 @@ export default {
                 selectMenuId: `level_cfg_${guildId}`,
                 buttonMatcher: (customId) =>
                     customId === `level_cfg_toggle_announce_${guildId}` ||
-                    customId === `level_cfg_toggle_system_${guildId}`,
+                    customId === `level_cfg_toggle_system_${guildId}` ||
+                    customId === `level_cfg_toggle_voicexp_${guildId}`,
                 onSelect: async (selectInteraction) => {
                     const selectedOption = selectInteraction.values[0];
                     switch (selectedOption) {
@@ -178,6 +198,9 @@ export default {
                             break;
                         case 'xp_range':
                             await handleXpRange(selectInteraction, interaction, cfg, guildId, client);
+                            break;
+                        case 'voice_xp_rate':
+                            await handleVoiceXpRate(selectInteraction, interaction, cfg, guildId, client);
                             break;
                         case 'xp_cooldown':
                             await handleXpCooldown(selectInteraction, interaction, cfg, guildId, client);
@@ -199,6 +222,7 @@ export default {
                 onButton: async (btnInteraction) => {
                     await btnInteraction.deferUpdate().catch(() => null);
                     const isAnnounce = btnInteraction.customId === `level_cfg_toggle_announce_${guildId}`;
+                    const isVoiceXp = btnInteraction.customId === `level_cfg_toggle_voicexp_${guildId}`;
 
                     if (isAnnounce) {
                         cfg.announceLevelUp = cfg.announceLevelUp === false;
@@ -208,6 +232,18 @@ export default {
                                 successEmbed(
                                     '✅ Announcements Updated',
                                     `Level-up announcements are now **${cfg.announceLevelUp ? 'enabled' : 'disabled'}**.`,
+                                ),
+                            ],
+                            flags: MessageFlags.Ephemeral,
+                        });
+                    } else if (isVoiceXp) {
+                        cfg.voiceXpEnabled = cfg.voiceXpEnabled === false;
+                        await saveLevelingConfig(client, guildId, cfg);
+                        await btnInteraction.followUp({
+                            embeds: [
+                                successEmbed(
+                                    '🎙️ Voice XP Updated',
+                                    `Voice chat XP earning is now **${cfg.voiceXpEnabled ? 'enabled' : 'disabled'}**.`,
                                 ),
                             ],
                             flags: MessageFlags.Ephemeral,
@@ -241,6 +277,75 @@ export default {
         }
     },
 };
+
+async function handleVoiceXpRate(selectInteraction, rootInteraction, cfg, guildId, client) {
+    const currentActive = cfg.voiceXpRate?.active ?? 15;
+    const currentPassive = cfg.voiceXpRate?.passive ?? 10;
+
+    const modal = new ModalBuilder()
+        .setCustomId('level_cfg_voice_xp_rate')
+        .setTitle('🎙️ Set Voice XP per Minute')
+        .addComponents(
+            new ActionRowBuilder().addComponents(
+                new TextInputBuilder()
+                    .setCustomId('active_input')
+                    .setLabel('Active / Unmuted XP per min (0–500)')
+                    .setStyle(TextInputStyle.Short)
+                    .setValue(String(currentActive))
+                    .setMaxLength(3)
+                    .setMinLength(1)
+                    .setRequired(true)
+                    .setPlaceholder('15'),
+            ),
+            new ActionRowBuilder().addComponents(
+                new TextInputBuilder()
+                    .setCustomId('passive_input')
+                    .setLabel('Passive / Muted XP per min (0–500)')
+                    .setStyle(TextInputStyle.Short)
+                    .setValue(String(currentPassive))
+                    .setMaxLength(3)
+                    .setMinLength(1)
+                    .setRequired(true)
+                    .setPlaceholder('10'),
+            ),
+        );
+
+    await selectInteraction.showModal(modal);
+
+    const submitted = await selectInteraction
+        .awaitModalSubmit({
+            filter: i => i.customId === 'level_cfg_voice_xp_rate' && i.user.id === selectInteraction.user.id,
+            time: 120_000,
+        })
+        .catch(() => null);
+
+    if (!submitted) return;
+
+    const rawActive = submitted.fields.getTextInputValue('active_input').trim();
+    const rawPassive = submitted.fields.getTextInputValue('passive_input').trim();
+    const newActive = parseInt(rawActive, 10);
+    const newPassive = parseInt(rawPassive, 10);
+
+    if (isNaN(newActive) || isNaN(newPassive) || newActive < 0 || newPassive < 0 || newActive > 500 || newPassive > 500) {
+        await replyUserError(submitted, { type: ErrorTypes.VALIDATION, message: 'Both voice XP values must be whole numbers between **0** and **500**.' });
+        return;
+    }
+
+    cfg.voiceXpRate = { active: newActive, passive: newPassive };
+    await saveLevelingConfig(client, guildId, cfg);
+
+    await submitted.reply({
+        embeds: [
+            successEmbed(
+                '✅ Voice XP Rates Updated',
+                `Active voice members will now earn **${newActive}** XP/min and muted members will earn **${newPassive}** XP/min.`,
+            ),
+        ],
+        flags: MessageFlags.Ephemeral,
+    });
+
+    await refreshDashboard(rootInteraction, cfg, guildId);
+}
 
 async function handleRoleRewardAdd(selectInteraction, rootInteraction, cfg, guildId, client) {
     const modal = new ModalBuilder()
@@ -357,7 +462,7 @@ async function handleRoleRewardRemove(selectInteraction, rootInteraction, cfg, g
     const level = parseInt(rawLevel, 10);
 
     if (isNaN(level) || !cfg.roleRewards?.[level]) {
-        await replyUserError(submitted, { type: ErrorTypes.USER_INPUT, message: 'No role reward is configured for level **${rawLevel}**.' });
+        await replyUserError(submitted, { type: ErrorTypes.USER_INPUT, message: `No role reward is configured for level **${rawLevel}**.` });
         return;
     }
 
@@ -375,7 +480,7 @@ async function handleRoleRewardRemove(selectInteraction, rootInteraction, cfg, g
 async function handleChannel(selectInteraction, rootInteraction, cfg, guildId, client) {
     const modal = new ModalBuilder()
         .setCustomId(`level_cfg_channel_modal_${guildId}`)
-        .setTitle('\ud83d\udce2 Change Level-up Channel');
+        .setTitle('📢 Change Level-up Channel');
 
     const channelSelect = new ChannelSelectMenuBuilder()
         .setCustomId('levelup_channel')
@@ -407,7 +512,7 @@ async function handleChannel(selectInteraction, rootInteraction, cfg, guildId, c
     const channel = selectInteraction.guild.channels.cache.get(channelId);
 
     if (channel && !botHasPermission(channel, ['SendMessages', 'EmbedLinks'])) {
-        await replyUserError(submitted, { type: ErrorTypes.PERMISSION, message: 'I need **SendMessages** and **EmbedLinks** permissions in ${channel} to send level-up notifications.' });
+        await replyUserError(submitted, { type: ErrorTypes.PERMISSION, message: `I need **SendMessages** and **EmbedLinks** permissions in ${channel} to send level-up notifications.` });
         return;
     }
 
@@ -415,7 +520,7 @@ async function handleChannel(selectInteraction, rootInteraction, cfg, guildId, c
     await saveLevelingConfig(client, guildId, cfg);
 
     await submitted.reply({
-        embeds: [successEmbed('\u2705 Channel Updated', `Level-up notifications will now be sent in ${channel ??`<#${channelId}>`}.`)],
+        embeds: [successEmbed('✅ Channel Updated', `Level-up notifications will now be sent in ${channel ?? `<#${channelId}>`}.`)],
         flags: MessageFlags.Ephemeral,
     });
 
@@ -425,7 +530,7 @@ async function handleChannel(selectInteraction, rootInteraction, cfg, guildId, c
 async function handleIgnoreChannels(selectInteraction, rootInteraction, cfg, guildId, client) {
     const modal = new ModalBuilder()
         .setCustomId(`level_cfg_ignore_channels_${guildId}`)
-        .setTitle('\ud83d\udeab Ignored Channels');
+        .setTitle('🚫 Ignored Channels');
 
     const channelSelect = new ChannelSelectMenuBuilder()
         .setCustomId('ignore_channel')
@@ -472,7 +577,7 @@ async function handleIgnoreChannels(selectInteraction, rootInteraction, cfg, gui
         : '`None`';
 
     await submitted.reply({
-        embeds: [successEmbed('\u2705 Ignored Channels Updated', `XP will not be awarded in: ${list}`)],
+        embeds: [successEmbed('✅ Ignored Channels Updated', `XP will not be awarded in: ${list}`)],
         flags: MessageFlags.Ephemeral,
     });
 
@@ -482,7 +587,7 @@ async function handleIgnoreChannels(selectInteraction, rootInteraction, cfg, gui
 async function handleIgnoreRoles(selectInteraction, rootInteraction, cfg, guildId, client) {
     const modal = new ModalBuilder()
         .setCustomId(`level_cfg_ignore_roles_${guildId}`)
-        .setTitle('\ud83d\udeab Ignored Roles');
+        .setTitle('🚫 Ignored Roles');
 
     const roleSelect = new RoleSelectMenuBuilder()
         .setCustomId('ignore_role')
@@ -528,7 +633,7 @@ async function handleIgnoreRoles(selectInteraction, rootInteraction, cfg, guildI
         : '`None`';
 
     await submitted.reply({
-        embeds: [successEmbed('\u2705 Ignored Roles Updated', `These roles will not earn XP: ${list}`)],
+        embeds: [successEmbed('✅ Ignored Roles Updated', `These roles will not earn XP: ${list}`)],
         flags: MessageFlags.Ephemeral,
     });
 

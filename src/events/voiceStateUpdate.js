@@ -61,6 +61,7 @@ export default {
                 const session = activeVoiceSessions.get(userId);
                 if (session) {
                     updateSessionTime(session, isMuted);
+                    await flushSessionToPending(client, userId, session);
                     flushSessionToPending(userId, session);
                     activeVoiceSessions.delete(userId);
                 }
@@ -358,13 +359,18 @@ function updateSessionTime(session, wasMuted) {
     }
 }
 
-function flushSessionToPending(userId, session) {
+async function flushSessionToPending(client, userId, session) {
     const passiveMinutes = session.accumulatedPassiveMs / 60000;
     const activeMinutes = session.accumulatedActiveMs / 60000;
 
+    // Fetch dynamic rates from database config, fallback to 10 and 15
+    const levelingConfig = await getLevelingConfig(client, session.guildId);
+    const passiveRate = levelingConfig.voiceXpRate?.passive ?? 10;
+    const activeRate = levelingConfig.voiceXpRate?.active ?? 15;
+
     const earnedXp = Math.floor(
-        (passiveMinutes * PASSIVE_VOICE_XP_PER_MIN) +
-        (activeMinutes * ACTIVE_SPEAKING_XP_PER_MIN)
+        (passiveMinutes * passiveRate) +
+        (activeMinutes * activeRate)
     );
 
     if (earnedXp > 0) {
@@ -387,7 +393,7 @@ export function startVoiceXpScheduler(client) {
             for (const [userId, session] of activeVoiceSessions.entries()) {
                 updateSessionTime(session, session.isMuted);
                 session.lastStateChange = now;
-                flushSessionToPending(userId, session);
+                await flushSessionToPending(client, userId, session);
             }
 
             for (const [userId, data] of pendingVoiceXp.entries()) {
@@ -395,6 +401,8 @@ export function startVoiceXpScheduler(client) {
 
                 const levelingConfig = await getLevelingConfig(client, data.guildId);
                 if (!levelingConfig?.enabled) continue;
+
+                if (levelingConfig.voiceXpEnabled === false) continue;
 
                 const guild = await client.guilds.fetch(data.guildId).catch(() => null);
                 if (!guild) continue;

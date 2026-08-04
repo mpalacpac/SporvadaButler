@@ -151,6 +151,8 @@ export async function getLevelingConfig(client, guildId) {
     const guildConfig = await getGuildConfig(client, guildId);
     return guildConfig.leveling || {
       enabled: true,
+      voiceXpEnabled: true,
+      voiceXpRate: { passive: 10, active: 15 }, // <-- ADDED THIS
       xpPerMessage: { min: 15, max: 25 },
       xpCooldown: 20,
       levelUpMessage: '{user} has leveled up to level {level}!',
@@ -166,6 +168,8 @@ export async function getLevelingConfig(client, guildId) {
     logger.error(`Error getting leveling config for guild ${guildId}:`, error);
     return {
       enabled: true,
+      voiceXpEnabled: true,
+      voiceXpRate: { passive: 10, active: 15 }, // <-- ADDED THIS AS WELL
       xpPerMessage: { min: 15, max: 25 },
       xpCooldown: 20,
       levelUpMessage: '{user} has leveled up to level {level}!',
