@@ -1,8 +1,7 @@
 import { SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder } from 'discord.js';
-import { query } from '../../utils/postgresDatabase.js';
+import { db } from '../../utils/database.js';
 
 export default {
-    category: 'MapBuilder',
     data: new SlashCommandBuilder()
         .setName('map-setup')
         .setDescription('Initialize or update the regional custom map settings.')
@@ -29,7 +28,15 @@ export default {
         const height = interaction.options.getInteger('height');
 
         try {
-            const sqlQuery = `
+            if (!db.initialized) {
+                await db.initialize();
+            }
+
+            if (!db.isAvailable() || typeof db.db?.pool?.query !== 'function') {
+                return interaction.editReply({ content: '❌ Database pool is not currently available.' });
+            }
+
+            const queryText = `
                 INSERT INTO map_configs (guild_id, map_name, width_pixels, height_pixels, grid_resolution)
                 VALUES ($1, $2, $3, $4, 100)
                 ON CONFLICT (guild_id) 
@@ -37,7 +44,7 @@ export default {
                               width_pixels = EXCLUDED.width_pixels, 
                               height_pixels = EXCLUDED.height_pixels;
             `;
-            await query(sqlQuery, [guildId, mapName, width, height]);
+            await db.db.pool.query(queryText, [guildId, mapName, width, height]);
 
             const embed = new EmbedBuilder()
                 .setColor('#0099ff')
