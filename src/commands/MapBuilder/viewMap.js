@@ -1,13 +1,13 @@
-import { SlashCommandBuilder, EmbedBuilder } from 'discord.js';
+import { SlashCommandBuilder, EmbedBuilder, AttachmentBuilder } from 'discord.js';
 import { db } from '../../utils/database.js';
 
 export default {
     data: new SlashCommandBuilder()
         .setName('view-map')
-        .setDescription('View the current regional map statistics, configuration, and nation territories.'),
+        .setDescription('View regional map statistics, nation territories, and rendered grid chart.'),
 
     async execute(interaction) {
-        await interaction.deferReply({ ephemeral: false });
+        await interaction.deferReply({ flags: 0 });
 
         const guildId = interaction.guild.id;
 
@@ -27,17 +27,13 @@ export default {
 
             const mapConfig = configResult.rows[0];
 
-            const sectorsResult = await db.db.pool.query(
-                'SELECT terrain_type, COUNT(*) as count FROM map_sectors WHERE guild_id = $1 GROUP BY terrain_type',
-                [guildId]
-            );
-
-            let landCount = 0;
-            let oceanCount = 0;
-            sectorsResult.rows.forEach(row => {
-                if (row.terrain_type === 'land') landCount = parseInt(row.count);
-                if (row.terrain_type === 'ocean') oceanCount = parseInt(row.count);
-            });
+            // Fetch all claimed sectors and joined nations
+            const sectorsResult = await db.db.pool.query(`
+                SELECT s.sector_code, s.terrain_type, n.nation_name 
+                FROM map_sectors s 
+                LEFT JOIN map_nations n ON s.owner_nation_id = n.id 
+                WHERE s.guild_id = $1
+            `, [guildId]);
 
             const nationsResult = await db.db.pool.query(`
                 SELECT n.nation_name, COUNT(s.sector_code) as claimed_sectors 
@@ -48,6 +44,25 @@ export default {
                 ORDER BY claimed_sectors DESC
             `, [guildId]);
 
+            // Build a visual ASCII/Emoji Map Grid representation (e.g., 10x10 preview matrix)
+            const claimedMap = new Map();
+            sectorsResult.rows.forEach(sec => {
+                claimedMap.set(sec.sector_code, sec.terrain_type === 'ocean' ? '🟦' : '🟩');
+            });
+
+            const letters = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'];
+            let gridVisual = '```text\n    1  2  3  4  5  6  7  8  9  10\n';
+            
+            for (const letter of letters) {
+                gridVisual += `${letter}  `;
+                for (let i = 1; i <= 10; i++) {
+                    const code = `${letter}-${i}`;
+                    gridVisual += claimedMap.has(code) ? `${claimedMap.get(code)}` : '⬛ ';
+                }
+                gridVisual += '\n';
+            }
+            gridVisual += '```';
+
             let nationsList = 'No nations registered yet.';
             if (nationsResult.rows.length > 0) {
                 nationsList = nationsResult.rows
@@ -56,21 +71,20 @@ export default {
             }
 
             const embed = new EmbedBuilder()
-                .setColor('#2b2d31')
-                .setTitle(`🗺️ Regional Overview: ${mapConfig.map_name}`)
-                .setDescription('Current geographic and political breakdown of the custom world grid.')
+                .setColor('#0099ff')
+                .setTitle(`🗺️ Regional Map: ${mapConfig.map_name}`)
+                .setDescription('Visual micro-sector matrix preview (🟩 Land, 🟦 Ocean, ⬛ Wilderness):')
                 .addFields(
-                    { name: 'Canvas Size', value: `${mapConfig.width_pixels}px × ${mapConfig.height_pixels}px`, inline: true },
-                    { name: 'Grid Resolution', value: `${mapConfig.grid_resolution}×${mapConfig.grid_resolution} Matrix`, inline: true },
-                    { name: 'Terrain Breakdown', value: `🟩 Land Sectors: ${landCount}\n🟦 Ocean Sectors: ${oceanCount}`, inline: false },
-                    { name: 'Registered Nations & Territories', value: nationsList, inline: false }
+                    { name: 'Grid Preview Matrix', value: gridVisual, inline: false },
+                    { name: 'Canvas & Resolution', value: `${mapConfig.width_pixels}px × ${mapConfig.height_pixels}px (${mapConfig.grid_resolution}x grid)`, inline: true },
+                    { name: 'Registered Powers', value: nationsList, inline: false }
                 )
                 .setTimestamp();
 
             return interaction.editReply({ embeds: [embed] });
         } catch (error) {
-            console.error('Error viewing map stats:', error);
-            return interaction.editReply({ content: '❌ An error occurred while retrieving map statistics from the database.' });
+            console.error('Error rendering visual map view:', error);
+            return interaction.editReply({ content: '❌ An error occurred while generating the visual map overview.' });
         }
     },
 };
