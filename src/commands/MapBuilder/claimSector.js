@@ -2,6 +2,7 @@ import { SlashCommandBuilder, EmbedBuilder } from 'discord.js';
 import { query } from '../../utils/postgresDatabase.js';
 
 export default {
+    category: 'MapBuilder',
     data: new SlashCommandBuilder()
         .setName('claim-sector')
         .setDescription('Claim a specific micro-sector for your nation or set it as ocean.')

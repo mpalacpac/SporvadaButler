@@ -2,6 +2,7 @@ import { SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder } from 'discord.
 import { query } from '../../utils/postgresDatabase.js';
 
 export default {
+    category: 'MapBuilder',
     data: new SlashCommandBuilder()
         .setName('map-setup')
         .setDescription('Initialize or update the regional custom map settings.')

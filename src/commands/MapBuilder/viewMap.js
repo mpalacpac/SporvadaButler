@@ -2,6 +2,7 @@ import { SlashCommandBuilder, EmbedBuilder } from 'discord.js';
 import { query } from '../../utils/postgresDatabase.js';
 
 export default {
+    category: 'MapBuilder',
     data: new SlashCommandBuilder()
         .setName('view-map')
         .setDescription('View the current regional map statistics, configuration, and nation territories.'),
