@@ -36,7 +36,7 @@ export default {
             }
 
             if (!db.isAvailable() || typeof db.db?.pool?.query !== 'function') {
-                return interaction.editReply({ content: '❌ Database connection is currently unavailable.' });
+                return interaction.editReply({ content: '❌ PostgreSQL database pool is not available.' });
             }
 
             const configCheck = await db.db.pool.query('SELECT * FROM map_configs WHERE guild_id = $1', [guildId]);

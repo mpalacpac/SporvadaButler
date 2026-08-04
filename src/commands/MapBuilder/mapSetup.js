@@ -33,7 +33,7 @@ export default {
             }
 
             if (!db.isAvailable() || typeof db.db?.pool?.query !== 'function') {
-                return interaction.editReply({ content: '❌ Database pool is not currently available.' });
+                return interaction.editReply({ content: '❌ PostgreSQL database pool is not available.' });
             }
 
             const queryText = `
