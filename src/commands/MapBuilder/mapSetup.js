@@ -20,7 +20,7 @@ export default {
                 .setRequired(true)),
 
     async execute(interaction) {
-        await interaction.deferReply({ ephemeral: false });
+        await interaction.deferReply({ flags: 0 });
 
         const guildId = interaction.guild.id;
         const mapName = interaction.options.getString('map_name');
@@ -35,6 +35,37 @@ export default {
             if (!db.isAvailable() || typeof db.db?.pool?.query !== 'function') {
                 return interaction.editReply({ content: '❌ PostgreSQL database pool is not available.' });
             }
+
+            // Automatically create missing tables on the fly
+            await db.db.pool.query(`
+                CREATE TABLE IF NOT EXISTS map_configs (
+                    guild_id VARCHAR(32) PRIMARY KEY,
+                    map_name VARCHAR(100) NOT NULL,
+                    width_pixels INTEGER NOT NULL,
+                    height_pixels INTEGER NOT NULL,
+                    grid_resolution INTEGER DEFAULT 100,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+
+                CREATE TABLE IF NOT EXISTS map_nations (
+                    id SERIAL PRIMARY KEY,
+                    guild_id VARCHAR(32) NOT NULL,
+                    nation_name VARCHAR(100) NOT NULL,
+                    owner_discord_id VARCHAR(32) NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+
+                CREATE TABLE IF NOT EXISTS map_sectors (
+                    id SERIAL PRIMARY KEY,
+                    guild_id VARCHAR(32) NOT NULL,
+                    sector_code VARCHAR(10) NOT NULL,
+                    coord_x INTEGER DEFAULT 0,
+                    coord_y INTEGER DEFAULT 0,
+                    terrain_type VARCHAR(20) NOT NULL DEFAULT 'land',
+                    owner_nation_id INTEGER REFERENCES map_nations(id) ON DELETE SET NULL,
+                    UNIQUE(guild_id, sector_code)
+                );
+            `);
 
             const queryText = `
                 INSERT INTO map_configs (guild_id, map_name, width_pixels, height_pixels, grid_resolution)
