@@ -56,64 +56,81 @@ export function calculateTotalXp(level, currentXp = 0) {
 }
 
 export async function getLeaderboard(client, guildId, limit = 10) {
-  try {
-    
-    if (!guildId || typeof guildId !== 'string') {
-      throw new TitanBotError(
-        'Invalid guild ID',
-        ErrorTypes.VALIDATION,
-        'Guild ID is required.'
-      );
-    }
+    try {
+        if (!guildId || typeof guildId !== 'string') {
+            throw new TitanBotError(
+                'Invalid guild ID',
+                ErrorTypes.VALIDATION,
+                'Guild ID is required.'
+            );
+        }
 
-    if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
-      limit = Math.min(Math.max(limit, 1), 100);
-    }
+        if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
+            limit = Math.min(Math.max(limit, 1), 100);
+        }
 
-    const guild = client.guilds.cache.get(guildId);
-    if (!guild) {
-      logger.warn(`Guild ${guildId} not found in cache`);
-      return [];
-    }
-    
-    const members = await guild.members.fetch().catch(error => {
-      logger.error(`Failed to fetch members for guild ${guildId}:`, error);
-      return new Map();
-    });
-
-    const leaderboard = [];
-    
-    for (const [userId, member] of members) {
-      if (member.user.bot) continue;
-      
-      const data = await getUserLevelData(client, guildId, userId);
-      if (data && (data.totalXp > 0 || data.level > 0)) {
-        leaderboard.push({
-          userId,
-          username: member.user.username,
-          discriminator: member.user.discriminator,
-          ...data
+        const guild = client.guilds.cache.get(guildId);
+        if (!guild) {
+            logger.warn(`Guild ${guildId} not found in cache`);
+            return [];
+        }
+        
+        const members = await guild.members.fetch().catch(error => {
+            logger.error(`Failed to fetch members for guild ${guildId}:`, error);
+            return new Map();
         });
-      }
+
+        let leaderboard = [];
+        
+        for (const [userId, member] of members) {
+            if (member.user.bot) continue;
+            
+            const data = await getUserLevelData(client, guildId, userId);
+            if (data && (data.totalXp > 0 || data.level > 0)) {
+                leaderboard.push({
+                    userId,
+                    username: member.user.username,
+                    discriminator: member.user.discriminator,
+                    ...data
+                });
+            }
+        }
+
+        // --- SAFEGUARD: If leaderboard is empty, try a quick 500ms re-fetch in case of a flush race condition ---
+        if (leaderboard.length === 0) {
+            await new Promise(resolve => setTimeout(resolve, 500));
+            for (const [userId, member] of members) {
+                if (member.user.bot) continue;
+                const data = await getUserLevelData(client, guildId, userId);
+                if (data && (data.totalXp > 0 || data.level > 0)) {
+                    leaderboard.push({
+                        userId,
+                        username: member.user.username,
+                        discriminator: member.user.discriminator,
+                        ...data
+                    });
+                }
+            }
+        }
+        // -----------------------------------------------------------------------------------------------------
+        
+        leaderboard.sort((a, b) => b.totalXp - a.totalXp);
+        
+        leaderboard.forEach((entry, index) => {
+            entry.rank = index + 1;
+        });
+        
+        return leaderboard.slice(0, limit);
+        
+    } catch (error) {
+        logger.error('Error getting leaderboard:', error);
+        if (error instanceof TitanBotError) throw error;
+        throw new TitanBotError(
+            `Failed to fetch leaderboard: ${error.message}`,
+            ErrorTypes.DATABASE,
+            'Could not fetch the leaderboard at this time.'
+        );
     }
-    
-    leaderboard.sort((a, b) => b.totalXp - a.totalXp);
-    
-    leaderboard.forEach((entry, index) => {
-      entry.rank = index + 1;
-    });
-    
-    return leaderboard.slice(0, limit);
-    
-  } catch (error) {
-    logger.error('Error getting leaderboard:', error);
-    if (error instanceof TitanBotError) throw error;
-    throw new TitanBotError(
-      `Failed to fetch leaderboard: ${error.message}`,
-      ErrorTypes.DATABASE,
-      'Could not fetch the leaderboard at this time.'
-    );
-  }
 }
 
 export function createLeaderboardEmbed(leaderboard, guild) {
