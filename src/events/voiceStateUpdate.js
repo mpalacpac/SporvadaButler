@@ -62,7 +62,6 @@ export default {
                 if (session) {
                     updateSessionTime(session, isMuted);
                     await flushSessionToPending(client, userId, session);
-                    flushSessionToPending(userId, session);
                     activeVoiceSessions.delete(userId);
                 }
             }
@@ -360,13 +359,15 @@ function updateSessionTime(session, wasMuted) {
 }
 
 async function flushSessionToPending(client, userId, session) {
+    if (!session) return; // Safeguard if session is missing or undefined
+
     const passiveMinutes = session.accumulatedPassiveMs / 60000;
     const activeMinutes = session.accumulatedActiveMs / 60000;
 
-    // Fetch dynamic rates from database config, fallback to 10 and 15
-    const levelingConfig = await getLevelingConfig(client, session.guildId);
-    const passiveRate = levelingConfig.voiceXpRate?.passive ?? 10;
-    const activeRate = levelingConfig.voiceXpRate?.active ?? 15;
+    // Fetch dynamic rates from database config, fallback safely
+    const levelingConfig = await getLevelingConfig(client, session.guildId).catch(() => null);
+    const passiveRate = levelingConfig?.voiceXpRate?.passive ?? 10;
+    const activeRate = levelingConfig?.voiceXpRate?.active ?? 15;
 
     const earnedXp = Math.floor(
         (passiveMinutes * passiveRate) +
