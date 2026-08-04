@@ -1,5 +1,5 @@
 import { SlashCommandBuilder, EmbedBuilder } from 'discord.js';
-import db from '../../utils/database.js';
+import { query } from '../../utils/postgresDatabase.js';
 
 export default {
     data: new SlashCommandBuilder()
@@ -31,7 +31,7 @@ export default {
         const nationName = interaction.options.getString('nation_name');
 
         try {
-            const configCheck = await db.query('SELECT * FROM map_configs WHERE guild_id = $1', [guildId]);
+            const configCheck = await query('SELECT * FROM map_configs WHERE guild_id = $1', [guildId]);
             if (configCheck.rows.length === 0) {
                 return interaction.editReply({ content: '❌ The regional map has not been initialized yet. Run `/map-setup` first.' });
             }
@@ -43,7 +43,7 @@ export default {
                     return interaction.editReply({ content: '❌ You must specify your `nation_name` when claiming a land sector.' });
                 }
 
-                let nationQuery = await db.query(
+                let nationQuery = await query(
                     'SELECT id FROM map_nations WHERE guild_id = $1 AND LOWER(nation_name) = LOWER($2)',
                     [guildId, nationName]
                 );
@@ -51,7 +51,7 @@ export default {
                 if (nationQuery.rows.length > 0) {
                     nationId = nationQuery.rows[0].id;
                 } else {
-                    const insertNation = await db.query(
+                    const insertNation = await query(
                         'INSERT INTO map_nations (guild_id, nation_name, owner_discord_id) VALUES ($1, $2, $3) RETURNING id',
                         [guildId, nationName, interaction.user.id]
                     );
@@ -66,7 +66,7 @@ export default {
                 DO UPDATE SET terrain_type = EXCLUDED.terrain_type, 
                               owner_nation_id = EXCLUDED.owner_nation_id;
             `;
-            await db.query(sectorUpsert, [guildId, sectorCode, terrainType, nationId]);
+            await query(sectorUpsert, [guildId, sectorCode, terrainType, nationId]);
 
             const embed = new EmbedBuilder()
                 .setColor(terrainType === 'ocean' ? '#1e90ff' : '#2ecc71')

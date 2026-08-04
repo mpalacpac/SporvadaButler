@@ -1,5 +1,5 @@
 import { SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder } from 'discord.js';
-import db from '../../utils/database.js';
+import { query } from '../../utils/postgresDatabase.js';
 
 export default {
     data: new SlashCommandBuilder()
@@ -28,7 +28,7 @@ export default {
         const height = interaction.options.getInteger('height');
 
         try {
-            const query = `
+            const sqlQuery = `
                 INSERT INTO map_configs (guild_id, map_name, width_pixels, height_pixels, grid_resolution)
                 VALUES ($1, $2, $3, $4, 100)
                 ON CONFLICT (guild_id) 
@@ -36,7 +36,7 @@ export default {
                               width_pixels = EXCLUDED.width_pixels, 
                               height_pixels = EXCLUDED.height_pixels;
             `;
-            await db.query(query, [guildId, mapName, width, height]);
+            await query(sqlQuery, [guildId, mapName, width, height]);
 
             const embed = new EmbedBuilder()
                 .setColor('#0099ff')
