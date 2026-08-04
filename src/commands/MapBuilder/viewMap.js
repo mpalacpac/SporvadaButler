@@ -1,4 +1,4 @@
-import { SlashCommandBuilder, EmbedBuilder, AttachmentBuilder } from 'discord.js';
+import { SlashCommandBuilder, EmbedBuilder } from 'discord.js';
 import { db } from '../../utils/database.js';
 
 export default {
@@ -44,20 +44,27 @@ export default {
                 ORDER BY claimed_sectors DESC
             `, [guildId]);
 
-            // Build a visual ASCII/Emoji Map Grid representation (e.g., 10x10 preview matrix)
+            // Map exact database sector codes (case-insensitive trim support)
             const claimedMap = new Map();
             sectorsResult.rows.forEach(sec => {
-                claimedMap.set(sec.sector_code, sec.terrain_type === 'ocean' ? '🟦' : '🟩');
+                const cleanCode = sec.sector_code.trim().toUpperCase();
+                const symbol = sec.terrain_type === 'ocean' ? '🟦' : '🟩';
+                claimedMap.set(cleanCode, symbol);
             });
 
+            // Render a clear 10x10 preview matrix
             const letters = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'];
-            let gridVisual = '```text\n    1  2  3  4  5  6  7  8  9  10\n';
+            let gridVisual = '```text\n     1  2  3  4  5  6  7  8  9  10\n';
             
             for (const letter of letters) {
                 gridVisual += `${letter}  `;
                 for (let i = 1; i <= 10; i++) {
                     const code = `${letter}-${i}`;
-                    gridVisual += claimedMap.has(code) ? `${claimedMap.get(code)}` : '⬛ ';
+                    if (claimedMap.has(code)) {
+                        gridVisual += ` ${claimedMap.get(code)}`;
+                    } else {
+                        gridVisual += ' ⬛';
+                    }
                 }
                 gridVisual += '\n';
             }
