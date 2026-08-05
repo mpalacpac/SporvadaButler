@@ -12,7 +12,6 @@ export const CATEGORY_ICONS = {
   JoinToCreate: '🔌',
   Leveling: '📊',
   Logging: '📝',
-  MapBuilder: '🗺️', 
   Moderation: '🛡️',
   Music: '🎵',
   Reaction_roles: '🎭',
