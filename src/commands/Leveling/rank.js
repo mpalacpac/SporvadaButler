@@ -2,8 +2,8 @@ import { SlashCommandBuilder, EmbedBuilder, MessageFlags } from 'discord.js';
 import { logger } from '../../utils/logger.js';
 import { handleInteractionError, TitanBotError, ErrorTypes } from '../../utils/errorHandler.js';
 import { getUserLevelData, getLevelingConfig, getXpForLevel } from '../../services/leveling.js';
-
 import { InteractionHelper } from '../../utils/interactionHelper.js';
+
 export default {
   data: new SlashCommandBuilder()
     .setName('rank')
@@ -52,7 +52,9 @@ export default {
       const safeUserData = {
         level: userData?.level ?? 0,
         xp: userData?.xp ?? 0,
-        totalXp: userData?.totalXp ?? 0
+        totalXp: userData?.totalXp ?? 0,
+        messages: userData?.messages ?? userData?.message_count ?? 0,
+        voiceMinutes: userData?.voiceMinutes ?? userData?.voice_minutes ?? 0
       };
 
       const xpNeeded = getXpForLevel(safeUserData.level + 1);
@@ -64,22 +66,32 @@ export default {
         .setThumbnail(member.displayAvatarURL({ dynamic: true }))
         .addFields(
           {
-            name: 'Level',
+            name: '🏆 Level',
             value: safeUserData.level.toString(),
             inline: true
           },
           {
-            name: 'XP',
+            name: '✨ XP',
             value: `${safeUserData.xp}/${xpNeeded}`,
             inline: true
           },
           {
-            name: 'Total XP',
+            name: '🌟 Total XP',
             value: safeUserData.totalXp.toString(),
             inline: true
           },
           {
-            name: `Progress to Level ${safeUserData.level + 1}`,
+            name: '💬 Messages Sent',
+            value: safeUserData.messages.toLocaleString(),
+            inline: true
+          },
+          {
+            name: '🎙️ Voice Time',
+            value: `${safeUserData.voiceMinutes.toLocaleString()} mins`,
+            inline: true
+          },
+          {
+            name: `📈 Progress to Level ${safeUserData.level + 1}`,
             value: `${progressBar} ${progress}%`
           }
         )
