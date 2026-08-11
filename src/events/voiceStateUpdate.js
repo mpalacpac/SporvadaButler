@@ -363,6 +363,7 @@ async function flushSessionToPending(client, userId, session) {
 
     const passiveMinutes = session.accumulatedPassiveMs / 60000;
     const activeMinutes = session.accumulatedActiveMs / 60000;
+    const totalMinutes = Math.floor(passiveMinutes + activeMinutes);
 
     // Fetch dynamic rates from database config, fallback safely
     const levelingConfig = await getLevelingConfig(client, session.guildId).catch(() => null);
@@ -380,6 +381,19 @@ async function flushSessionToPending(client, userId, session) {
             pendingXp: current.pendingXp + earnedXp,
             guildId: session.guildId,
         });
+    }
+
+    // Increment voice_minutes in the database if minutes were accumulated
+    if (totalMinutes > 0) {
+        try {
+            await client.query(`
+                UPDATE user_levels 
+                SET voice_minutes = COALESCE(voice_minutes, 0) + $1 
+                WHERE guild_id = $2 AND user_id = $3
+            `, [totalMinutes, session.guildId, userId]);
+        } catch (error) {
+            logger.error('Error updating voice minutes in database:', error);
+        }
     }
 
     session.accumulatedPassiveMs = 0;
