@@ -96,7 +96,6 @@ export async function getLeaderboard(client, guildId, limit = 10) {
             }
         }
 
-        // --- SAFEGUARD: If leaderboard is empty, try a quick 500ms re-fetch in case of a flush race condition ---
         if (leaderboard.length === 0) {
             await new Promise(resolve => setTimeout(resolve, 500));
             for (const [userId, member] of members) {
@@ -112,7 +111,6 @@ export async function getLeaderboard(client, guildId, limit = 10) {
                 }
             }
         }
-        // -----------------------------------------------------------------------------------------------------
         
         leaderboard.sort((a, b) => b.totalXp - a.totalXp);
         
@@ -169,7 +167,7 @@ export async function getLevelingConfig(client, guildId) {
     return guildConfig.leveling || {
       enabled: true,
       voiceXpEnabled: true,
-      voiceXpRate: { passive: 10, active: 15 }, // <-- ADDED THIS
+      voiceXpRate: { passive: 10, active: 15 },
       xpPerMessage: { min: 15, max: 25 },
       xpCooldown: 20,
       levelUpMessage: '{user} has leveled up to level {level}!',
@@ -186,7 +184,7 @@ export async function getLevelingConfig(client, guildId) {
     return {
       enabled: true,
       voiceXpEnabled: true,
-      voiceXpRate: { passive: 10, active: 15 }, // <-- ADDED THIS AS WELL
+      voiceXpRate: { passive: 10, active: 15 },
       xpPerMessage: { min: 15, max: 25 },
       xpCooldown: 20,
       levelUpMessage: '{user} has leveled up to level {level}!',
@@ -241,45 +239,6 @@ export async function getUserLevelData(client, guildId, userId) {
       `Failed to fetch user data: ${error.message}`,
       ErrorTypes.DATABASE,
       'Could not fetch level data at this time.'
-    );
-  }
-}
-
-export async function saveUserLevelData(client, guildId, userId, data) {
-  try {
-    if (!guildId || !userId) {
-      throw new TitanBotError(
-        'Guild ID and User ID are required',
-        ErrorTypes.VALIDATION
-      );
-    }
-
-    if (!data || typeof data !== 'object') {
-      throw new TitanBotError(
-        'Invalid user level data',
-        ErrorTypes.VALIDATION
-      );
-    }
-
-    const sanitizedData = {
-      xp: Math.max(0, Number(data.xp) || 0),
-      level: Math.max(0, Math.min(Number(data.level) || 0, MAX_LEVEL)),
-      totalXp: Math.max(0, Number(data.totalXp) || 0),
-      messages: Math.max(0, Number(data.messages) || 0),
-      voiceMinutes: Math.max(0, Number(data.voiceMinutes) || 0),
-      lastMessage: Number(data.lastMessage) || 0,
-      rank: Number(data.rank) || 0
-    };
-
-    const key = `${guildId}:leveling:users:${userId}`;
-    await client.db.set(key, sanitizedData);
-  } catch (error) {
-    logger.error(`Error saving user level data for ${userId}:`, error);
-    if (error instanceof TitanBotError) throw error;
-    throw new TitanBotError(
-      `Failed to save user data: ${error.message}`,
-      ErrorTypes.DATABASE,
-      'Could not save level data at this time.'
     );
   }
 }
