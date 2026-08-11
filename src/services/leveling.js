@@ -218,6 +218,8 @@ export async function getUserLevelData(client, guildId, userId) {
         xp: 0,
         level: 0,
         totalXp: 0,
+        messages: 0,
+        voiceMinutes: 0,
         lastMessage: 0,
         rank: 0
       };
@@ -227,6 +229,8 @@ export async function getUserLevelData(client, guildId, userId) {
       xp: Math.max(0, data.xp || 0),
       level: Math.max(0, Math.min(data.level || 0, MAX_LEVEL)),
       totalXp: Math.max(0, data.totalXp || 0),
+      messages: Math.max(0, data.messages || 0),
+      voiceMinutes: Math.max(0, data.voiceMinutes || data.voice_minutes || 0),
       lastMessage: data.lastMessage || 0,
       rank: data.rank || 0
     };
@@ -261,6 +265,47 @@ export async function saveUserLevelData(client, guildId, userId, data) {
       xp: Math.max(0, Number(data.xp) || 0),
       level: Math.max(0, Math.min(Number(data.level) || 0, MAX_LEVEL)),
       totalXp: Math.max(0, Number(data.totalXp) || 0),
+      messages: Math.max(0, Number(data.messages) || 0),
+      voiceMinutes: Math.max(0, Number(data.voiceMinutes) || 0),
+      lastMessage: Number(data.lastMessage) || 0,
+      rank: Number(data.rank) || 0
+    };
+
+    const key = `${guildId}:leveling:users:${userId}`;
+    await client.db.set(key, sanitizedData);
+  } catch (error) {
+    logger.error(`Error saving user level data for ${userId}:`, error);
+    if (error instanceof TitanBotError) throw error;
+    throw new TitanBotError(
+      `Failed to save user data: ${error.message}`,
+      ErrorTypes.DATABASE,
+      'Could not save level data at this time.'
+    );
+  }
+}
+
+export async function saveUserLevelData(client, guildId, userId, data) {
+  try {
+    if (!guildId || !userId) {
+      throw new TitanBotError(
+        'Guild ID and User ID are required',
+        ErrorTypes.VALIDATION
+      );
+    }
+
+    if (!data || typeof data !== 'object') {
+      throw new TitanBotError(
+        'Invalid user level data',
+        ErrorTypes.VALIDATION
+      );
+    }
+
+    const sanitizedData = {
+      xp: Math.max(0, Number(data.xp) || 0),
+      level: Math.max(0, Math.min(Number(data.level) || 0, MAX_LEVEL)),
+      totalXp: Math.max(0, Number(data.totalXp) || 0),
+      messages: Math.max(0, Number(data.messages) || 0),
+      voiceMinutes: Math.max(0, Number(data.voiceMinutes) || 0),
       lastMessage: Number(data.lastMessage) || 0,
       rank: Number(data.rank) || 0
     };

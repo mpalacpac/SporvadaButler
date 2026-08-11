@@ -1,6 +1,7 @@
 import { Events } from 'discord.js';
 import { logger } from '../utils/logger.js';
-import { getLevelingConfig, getUserLevelData, incrementMessageCount } from '../services/leveling.js';
+// --- MODIFIED: Replaced incrementMessageCount with saveUserLevelData to match the new storage system ---
+import { getLevelingConfig, getUserLevelData, saveUserLevelData } from '../services/leveling.js';
 import { addXp } from '../services/xpSystem.js';
 import { checkRateLimit } from '../utils/rateLimiter.js';
 import { parsePrefixCommand } from '../utils/prefixParser.js';
@@ -220,8 +221,21 @@ async function handleLeveling(message, client) {
     const result = await addXp(client, message.guild, message.member, finalXP);
     
     if (result.success) {
-      // Increment message counter when XP is successfully processed
-      await incrementMessageCount(client, message.guild.id, message.author.id);
+      
+      // --- ADDED: Increment message counter using database storage helpers ---
+      try {
+        // Fetch the updated user profile (so we don't accidentally overwrite the new XP just given)
+        const updatedUserData = await getUserLevelData(client, message.guild.id, message.author.id); 
+        
+        // Add 1 to the existing messages count (default to 0 if it doesn't exist yet)
+        updatedUserData.messages = (updatedUserData.messages || 0) + 1; 
+        
+        // Save the updated profile back to the database
+        await saveUserLevelData(client, message.guild.id, message.author.id, updatedUserData); 
+      } catch (updateError) {
+        logger.error('Error updating message count in database storage:', updateError); 
+      }
+      // -----------------------------------------------------------------------
 
       if (result.leveledUp) {
         logger.info(
