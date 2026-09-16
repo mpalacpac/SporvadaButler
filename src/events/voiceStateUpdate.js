@@ -10,10 +10,10 @@ import { sanitizeInput } from '../utils/validation.js';
 import { logger } from '../utils/logger.js';
 import { handleMusicVoiceState } from '../services/music/musicVoiceState.js';
 
-// --- NEW IMPORTS FOR VOICE XP ---
-import { getLevelingConfig } from '../services/leveling.js';
+// --- UPDATED IMPORTS FOR VOICE XP ---
+import { getLevelingConfig, getUserLevelData, saveUserLevelData } from '../services/leveling.js';
 import { addXp } from '../services/xpSystem.js';
-// --------------------------------
+// ------------------------------------
 
 const channelCreationCooldown = new Map();
 const VOICE_CREATE_COOLDOWN_MS = 2000;
@@ -383,14 +383,12 @@ async function flushSessionToPending(client, userId, session) {
         });
     }
 
-    // Increment voice_minutes in the database if minutes were accumulated
+    // [REVISED] Increment voiceMinutes using the leveling service storage mechanism
     if (totalMinutes > 0) {
         try {
-            await client.query(`
-                UPDATE user_levels 
-                SET voice_minutes = COALESCE(voice_minutes, 0) + $1 
-                WHERE guild_id = $2 AND user_id = $3
-            `, [totalMinutes, session.guildId, userId]);
+            const userData = await getUserLevelData(client, session.guildId, userId);
+            userData.voiceMinutes = (userData.voiceMinutes || 0) + totalMinutes;
+            await saveUserLevelData(client, session.guildId, userId, userData);
         } catch (error) {
             logger.error('Error updating voice minutes in database:', error);
         }

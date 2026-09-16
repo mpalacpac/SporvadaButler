@@ -1,5 +1,3 @@
-// leveling.js
-
 import { EmbedBuilder } from 'discord.js';
 import { logger } from '../utils/logger.js';
 import { getGuildConfig, setGuildConfig } from '../services/guildConfig.js';
@@ -85,6 +83,7 @@ export async function getLeaderboard(client, guildId, limit = 10) {
         for (const [userId, member] of members) {
             if (member.user.bot) continue;
             
+            // [REVISED] Fetches user data strictly scoped to the current guildId
             const data = await getUserLevelData(client, guildId, userId);
             if (data && (data.totalXp > 0 || data.level > 0)) {
                 leaderboard.push({
@@ -208,6 +207,7 @@ export async function getUserLevelData(client, guildId, userId) {
       );
     }
 
+    // [REVISED] Composite key ensures per-server data segregation
     const key = `${guildId}:leveling:users:${userId}`;
     const data = await client.db.get(key);
     
@@ -269,6 +269,7 @@ export async function saveUserLevelData(client, guildId, userId, data) {
       rank: Number(data.rank) || 0
     };
 
+    // [REVISED] Saves user statistics tied securely to this specific guild context
     const key = `${guildId}:leveling:users:${userId}`;
     await client.db.set(key, sanitizedData);
   } catch (error) {
@@ -472,6 +473,8 @@ export async function deleteUserLevelData(client, guildId, userId) {
       );
     }
 
+    // [NOTE] This function is preserved solely for manual data resets (e.g., admin wipe commands). 
+    // Ensure this is NOT called inside src/events/guildMemberRemove.js so that user XP is retained when leaving.
     const key = `${guildId}:leveling:users:${userId}`;
     await client.db.delete(key);
     
