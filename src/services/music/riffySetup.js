@@ -38,7 +38,13 @@ export function initializeMusic(client) {
         ) {
             return;
         }
-        client.riffy.updateVoiceState(packet);
+        
+        // Wrap updateVoiceState in a try-catch block to prevent unhandled missing endpoint crashes
+        try {
+            client.riffy.updateVoiceState(packet);
+        } catch (error) {
+            logger.warn(`Ignored premature or incomplete voice packet (${packet.t}):`, error.message);
+        }
     });
 
     client.riffy.on('playerError', (player, error) => {
